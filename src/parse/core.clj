@@ -13,7 +13,7 @@
     variableEval = variableName
     variableStock = variableName
     <variableName> = #'[a-zA-Z_]\\w*'
-    assign = variableStock space? '=' space? expression
+    assign = variableStock space? <'='> space? expression
     <baseOperation> = <'('> space? baseOperation space? <')'> | operation
     operation = numberExpression space? operator space? numberExpression
     operator = '*' / '/' / '+' / '-'
@@ -26,33 +26,30 @@
     "*" *
     "/" /))
 
-(def transform-options
-  {:number read-string
-   :operator choose-operator
-   :operation #(apply %2 [%1 %3])
-   :expression identity})
+(let [a {:test 1}
+      b 2]
+  (conj a {:b b}))
 
-; usage: (interpret (parser "1 + (2 + 3) / 4 - 1 * 2"))
-(defn interpret [input]
-  (first (->> input (insta/transform transform-options))))
+(defn interpret [input env]
+  (let [envOut env
+        out (first (->> input (insta/transform {:number read-string
+                                                :operator choose-operator
+                                                :operation #(apply %2 [%1 %3])
+                                                :variableEval #((keyword (str "var-" %1)) envOut)
+                                                :variableStock #(keyword (str "var-" %1))
+                                                :assign #(conj envOut {%1 %2})
+                                                :expression identity})))]
+    (if (= (type out) clojure.lang.PersistentArrayMap)
+      {:env out :out nil}
+      {:env envOut :out out})
+  ))
+
+; usage: (interpret (parser "1 + 1") {:var-b 1})
 
 (defn -main  [& args]
   (loop [env {}]
     (let [current-line (read-line)
           current-ast (parser current-line)
-          next-env (interpret current-ast)]
-      (do (println next-env)
-        (recur next-env)))))
-
-;; REPL Read Eval Print Loop
-;(loop [env {}]
-;  (let [curr-line (read-line)]
-;    curr-ast (parser curr-line)
-;    next-env (interpret (curr-ast env))
-;    (do (println next-env)
-;      (recur next-env))))
-
-;(loop [env {}]
-;  (let [curr-line (read-line)]))
-
-; ETL: transformation de données
+          next-env (interpret current-ast env)]
+      (do (println (:out next-env))
+        (recur (:env next-env))))))
