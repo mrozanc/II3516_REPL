@@ -30,9 +30,14 @@
       b 2]
   (conj a {:b b}))
 
+(defn prompt []
+  (print "% ")
+  (flush)
+  (read-line))
+
 (defn interpret [input env]
   (let [envOut env
-        out (first (->> input (insta/transform {:number read-string
+        out (first (->> input (insta/transform {:number #(Long/parseLong %)
                                                 :operator choose-operator
                                                 :operation #(apply %2 [%1 %3])
                                                 :variableEval #((keyword (str "var-" %1)) envOut)
@@ -48,7 +53,7 @@
 
 (defn -main  [& args]
   (loop [env {}]
-    (let [current-line (read-line)
+    (let [current-line (prompt)
           current-ast (parser current-line)
           next-env (interpret current-ast env)]
       (do (println (:out next-env))
