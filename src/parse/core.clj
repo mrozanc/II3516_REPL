@@ -3,58 +3,68 @@
 
 (def parser
   (insta/parser
-   "<understandable> = space? baseExpression space?
-    <baseExpression> = <'('> space? expression space? <')'> | expression
-    <expression> = numberExpression / booleanExpression / dynamicExpression / assign
-    numberExpression = number | baseNumberOperation
-    booleanExpression = boolean | booleanOperation
-    dynamicExpression = variableEval
-    number = integer | float
-    <integer> = #'\\d+' | <'('> space? #'\\d+' space? <')'>
-    <float> = #'\\d+\\.\\d*' | <'('> space? #'\\d+\\.\\d*' space? <')'>
-    boolean = 'true' | 'false'
-    variableEval = variableName
-    variableStock = variableName
-    <variableName> = #'[a-zA-Z_]\\w*'
-    assign = variableStock space? <'='> space? expression
-    <baseNumberOperation> = <'('> space? baseNumberOperation space? <')'> | numberOperation
-    numberOperation = (numberExpression | dynamicExpression) space? numberOperator space? (numberExpression | dynamicExpression)
-    numberOperator = '*' / '/' / '+' / '-'
+   "<understandable>       = space? instruction space? / baseExpression
+    <instruction>          = space? (ifExpression / whileExpression / baseExpression) space? <';'>
+    <baseExpression>       = <'('> space? expression space? <')'> / expression
+    <expression>           = ternaryExpression / numberExpression / booleanExpression / dynamicExpression / assign
+    ifExpression           = <'if'> space? <'('> space? booleanExpression space? <')'> space? block space? (<'else'> space? block)?
+    ternaryExpression      = booleanExpression space? <'?'> space? baseExpression space? <':'> space? baseExpression
+    whileExpression        = <'while'> space? <'('> space? booleanExpression space? <')'> space? block
+    block                  = <'{'> space? instruction* space? <'}'>
+    numberExpression       = number | baseNumberOperation
+    booleanExpression      = boolean | booleanOperation
+    dynamicExpression      = variableEval
+    number                 = integer | float
+    <integer>              = #'\\d+' | <'('> space? #'\\d+' space? <')'>
+    <float>                = #'\\d+\\.\\d*' | <'('> space? #'\\d+\\.\\d*' space? <')'>
+    boolean                = 'true' | 'false'
+    variableEval           = variableName
+    variableStock          = variableName
+    <variableName>         = #'[a-zA-Z_]\\w*'
+    assign                 = variableStock space? <'='> space? expression
+    <baseNumberOperation>  = <'('> space? baseNumberOperation space? <')'> | numberOperation
+    numberOperation        = (numberExpression | dynamicExpression) space? numberOperator space? (numberExpression | dynamicExpression)
+    numberOperator         = '*' / '/' / '+' / '-'
     <baseBooleanOperation> = <'('> space? baseBooleanOperation space? <')'> | booleanOperation
-    booleanOperation = (booleanExpression / dynamicExpression) space? booleanBinaryOperator space? (booleanExpression / dynamicExpression) | booleanUnaryOperator space? (booleanExpression / dynamicExpression) | (numberExpression | dynamicExpression) space? booleanBinaryOperator space? (numberExpression | dynamicExpression)
-    <booleanOperator> = booleanBinaryOperator / booleanUnaryOperator
-    booleanBinaryOperator = '==' / '!=' / '<' / '>' / '<=' / '>=' / '&&' / '||'
-    booleanUnaryOperator = '!'
-    <space> = <#'\\s+'>"))
+    booleanOperation       = (booleanExpression / dynamicExpression) space? booleanBinaryOperator space? (booleanExpression / dynamicExpression)
+                             | booleanUnaryOperator space? (booleanExpression / dynamicExpression)
+                             | (numberExpression / dynamicExpression) space? booleanBinaryOperator space? (numberExpression / dynamicExpression)
+    <booleanOperator>      = booleanBinaryOperator / booleanUnaryOperator
+    booleanBinaryOperator  = '==' / '!=' / '<' / '>' / '<=' / '>=' / '&&' / '||'
+    booleanUnaryOperator   = '!'
+    <space>                = <#'\\s+'>"))
 
 (defn choose-operator [op]
   (case op
-    "+" +
-    "-" -
-    "*" *
-    "/" /
+    "+"  +
+    "-"  -
+    "*"  *
+    "/"  /
     "==" =
     "!=" not=
-    "<" <
-    ">" >
+    "<"  <
+    ">"  >
     "<=" <=
     ">=" >=
     "&&" (fn [a b] (every? (fn [p] (= true p)) [a b]))
     "||" (fn [a b] (if (= nil (some (fn [p] (= true p)) [a b])) false true))
-    "!" not))
+    "!"  not))
 
 (defn prompt []
   (print "% ")
   (flush)
   (read-line))
 
+(parser "!true")
+
 (defn interpret [input env]
   (let [envOut env
-        out (first (->> input (insta/transform {:number #(Long/parseLong %)
+        out (first (->> input (insta/transform {:block (fn [& instructions] (map identity instructions))
+                                                :number #(Long/parseLong %)
                                                 :boolean #(case % "true" true "false" false)
                                                 :booleanBinaryOperator choose-operator
                                                 :booleanUnaryOperator choose-operator
-                                                :booleanOperation #(apply %2 [%1 %3])
+                                                :booleanOperation (fn ([o a] (apply o [a])) ([a o b] (apply o [a b])))
                                                 :numberOperator choose-operator
                                                 :numberOperation #(apply %2 [%1 %3])
                                                 :variableEval #((keyword (str "var-" %1)) envOut)
@@ -62,7 +72,10 @@
                                                 :assign #(conj envOut {%1 %2})
                                                 :numberExpression identity
                                                 :booleanExpression identity
-                                                :dynamicExpression identity})))]
+                                                :dynamicExpression identity
+                                                :ifExpression (fn ([c t] (if c t)) ([c t e] (if c t e)))
+                                                :ternaryExpression (fn [c t e] (if c t e))
+                                                :whileExpression (fn [c b] (while c b))})))]
     (if (= (type out) clojure.lang.PersistentArrayMap)
       {:env out :out nil}
       {:env envOut :out out})
