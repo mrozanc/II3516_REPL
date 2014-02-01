@@ -3,7 +3,11 @@
 
 (def parser
   (insta/parser
-   "<understandable>       = space? instruction space? / baseExpression
+   "<understandable>       = space? (function / instruction)+ space? / baseExpression
+    functionCall           = <'('> space? variableEval (space? expression)* space? <')'>
+    function               = <'('> space? <'['> space? arguments space? <']'> space functionBody space? <')'>
+    functionBody           = #'[^\\(\\)]*(\\([^\\(\\)]*?\\))*[^\\(\\)]*?'
+    arguments              = argument? (space argument)*
     <instruction>          = space? (ifExpression / whileExpression / baseExpression) space? <';'>
     <baseExpression>       = <'('> space? expression space? <')'> / expression
     <expression>           = ternaryExpression / numberExpression / booleanExpression / dynamicExpression / assign
@@ -13,15 +17,16 @@
     block                  = <'{'> space? instruction* space? <'}'>
     numberExpression       = number | baseNumberOperation
     booleanExpression      = boolean | booleanOperation
-    dynamicExpression      = variableEval
+    dynamicExpression      = functionCall | variableEval
     number                 = integer | float
     <integer>              = #'\\d+' | <'('> space? #'\\d+' space? <')'>
     <float>                = #'\\d+\\.\\d*' | <'('> space? #'\\d+\\.\\d*' space? <')'>
     boolean                = 'true' | 'false'
+    argument               = variableName
     variableEval           = variableName
     variableStock          = variableName
     <variableName>         = #'[a-zA-Z_]\\w*'
-    assign                 = variableStock space? <'='> space? expression
+    assign                 = variableStock space? <'='> space? (expression | function space? <';'>)
     <baseNumberOperation>  = <'('> space? baseNumberOperation space? <')'> | numberOperation
     numberOperation        = (numberExpression | dynamicExpression) space? numberOperator space? (numberExpression | dynamicExpression)
     numberOperator         = '*' / '/' / '+' / '-'
@@ -32,7 +37,7 @@
     <booleanOperator>      = booleanBinaryOperator / booleanUnaryOperator
     booleanBinaryOperator  = '==' / '!=' / '<' / '>' / '<=' / '>=' / '&&' / '||'
     booleanUnaryOperator   = '!'
-    <space>                = <#'\\s+'>"))
+    <space>                = <#'[\\s\\n]+'>"))
 
 (defn choose-operator [op]
   (case op
@@ -55,11 +60,25 @@
   (flush)
   (read-line))
 
-(parser "!true")
-
 (defn interpret [input env]
   (let [envOut env
-        out (first (->> input (insta/transform {:block (fn [& instructions] (map identity instructions))
+        out (first (->> input (insta/transform {:function list
+                                                :functionBody str
+                                                :functionCall (fn
+                                                                ([function] (interpret (rest function) {}))
+                                                                ([function & args] (:out (interpret (parser (first (rest function))) (loop [fenv {}
+                                                                                                                                      vars (first function)
+                                                                                                                                      arguments args]
+                                                                                                                                 (let [var (first vars)
+                                                                                                                                      fenv (conj fenv {(keyword (str "var-" var)) (first arguments)})
+                                                                                                                                      vars (rest vars)
+                                                                                                                                      arguments (rest arguments)]
+                                                                                                                                   (if (not (empty? vars))
+                                                                                                                                     (recur fenv vars arguments)
+                                                                                                                                     fenv)))))))
+                                                :arguments list
+                                                :argument str
+                                                :block (fn [& instructions] (map identity instructions))
                                                 :number #(Long/parseLong %)
                                                 :boolean #(case % "true" true "false" false)
                                                 :booleanBinaryOperator choose-operator
