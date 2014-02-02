@@ -123,11 +123,3 @@
           next-env (interpret current-ast env)]
       (do (println (:out next-env))
         (recur (:env next-env))))))
-
-(interpret (parser "1;2") {})
-
-(parser "1")
-
-(parser "a = 0; while (a < 3) { a = a + 1; }")
-
-(interpret (parser "a = 0; while (a < 3) { a = a + 1; }") {})
